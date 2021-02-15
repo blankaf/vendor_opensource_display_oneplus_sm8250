@@ -53,6 +53,9 @@
 #include <soc/qcom/scm.h>
 #include "soc/qcom/secure_buffer.h"
 #include "soc/qcom/qtee_shmbridge.h"
+#if defined(CONFIG_PXLW_IRIS) || defined(CONFIG_PXLW_SOFT_IRIS)
+#include "iris/dsi_iris5_api.h"
+#endif
 
 #define CREATE_TRACE_POINTS
 #include "sde_trace.h"
@@ -3123,7 +3126,11 @@ static const struct msm_kms_funcs kms_funcs = {
 	.get_address_space_device = _sde_kms_get_address_space_device,
 	.postopen = _sde_kms_post_open,
 	.check_for_splash = sde_kms_check_for_splash,
+
 	.get_mixer_count = sde_kms_get_mixer_count,
+#if defined(CONFIG_PXLW_IRIS) || defined(CONFIG_PXLW_SOFT_IRIS)
+	.iris_operate = iris_sde_kms_iris_operate,
+#endif
 };
 
 /* the caller api needs to turn on clock before calling it */
@@ -3260,12 +3267,13 @@ void sde_kms_update_pm_qos_irq_request(struct sde_kms *sde_kms,
 
 		req = &sde_kms->pm_qos_irq_req;
 		req->type = PM_QOS_REQ_AFFINE_CORES;
-		req->cpus_affine = sde_kms->irq_cpu_mask;
+		atomic_set(&req->cpus_affine,
+			   *cpumask_bits(&sde_kms->irq_cpu_mask));
 		cpu_irq_latency = sde_kms->catalog->perf.cpu_irq_latency;
 
 		if (pm_qos_request_active(req))
 			pm_qos_update_request(req, cpu_irq_latency);
-		else if (!cpumask_empty(&req->cpus_affine)) {
+		else if (atomic_read(&req->cpus_affine)) {
 			/** If request is not active yet and mask is not empty
 			 *  then it needs to be added initially
 			 */
